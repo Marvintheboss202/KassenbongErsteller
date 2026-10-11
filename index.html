@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f1f2f4">
+<title>Kassenbon – Einkaufsservice</title>
+<style>
+:root{color-scheme:light;--bg:#f1f2f4;--card:#fff;--ink:#171717;--muted:#666;--line:#dedfe3;--radius:18px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{width:min(760px,100%);margin:0 auto;padding:24px 16px 48px}
+header{margin:4px 2px 22px}
+h1{font-size:clamp(2rem,8vw,2.7rem);line-height:1.1;margin:0 0 8px;letter-spacing:-.04em}
+header p{color:var(--muted);margin:0}
+.card{background:var(--card);border-radius:var(--radius);padding:18px;margin:14px 0;box-shadow:0 2px 12px #1018280a}
+label,.label{display:block;font-weight:700;margin:0 0 9px}
+input[type=text],textarea{display:block;width:100%;font:inherit;color:inherit;background:#fff;border:1px solid #cfd1d6;border-radius:12px;padding:14px;outline:none}
+input[type=text]:focus,textarea:focus{border-color:#555;box-shadow:0 0 0 3px #11111110}
+textarea{min-height:175px;resize:vertical}
+.help{font-size:.88rem;color:var(--muted);margin:8px 0 0}
+input[type=file]{width:100%;font:inherit;font-size:.94rem}
+.filebox{border:1px dashed #bfc2c8;border-radius:12px;padding:14px;background:#fafafa}
+#photoStatus{font-size:.9rem;color:var(--muted);margin-top:8px;overflow-wrap:anywhere}
+.actions{display:grid;gap:10px;margin:18px 0}
+button{width:100%;min-height:52px;border:0;border-radius:13px;padding:13px 16px;font:700 1rem/1.25 inherit;font-family:inherit;font-size:1rem;font-weight:700;cursor:pointer;touch-action:manipulation}
+.primary{background:#171717;color:white}
+.secondary{background:#e4e5e8;color:#171717}
+button:disabled{opacity:.45;cursor:not-allowed}
+#message{display:none;padding:13px 15px;border-radius:12px;margin:12px 0;font-size:.95rem}
+#message.error{display:block;background:#fff0f0;color:#8b1717}
+#message.ok{display:block;background:#eaf7ed;color:#175a2c}
+#previewSection{display:none}
+.preview-wrap{background:#e7e8eb;border-radius:14px;padding:12px;overflow:auto;text-align:center}
+#preview{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;box-shadow:0 2px 12px #0001}
+.preview-note{color:var(--muted);font-size:.86rem;margin:10px 0 0}
+footer{font-size:.82rem;color:var(--muted);text-align:center;padding:8px 12px 0}
+@media(min-width:560px){main{padding-top:36px}.card{padding:22px}.actions{grid-template-columns:1fr 1fr}.actions .primary{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Kassenbon</h1>
+  <p>Erstelle deinen Kassenbon für deinen Einkaufsservice.</p>
+</header>
+
+<section class="card">
+  <label for="customer">Kunde</label>
+  <input id="customer" type="text" placeholder="z. B. Max Mustermann" autocomplete="name" maxlength="180">
+</section>
+
+<section class="card">
+  <label for="items">Bestellung / Artikelliste</label>
+  <textarea id="items" placeholder="Milch 2×&#10;Brot 1×&#10;Äpfel 1 kg&#10;Butter 1×"></textarea>
+  <p class="help">Ein Artikel pro Zeile. Mengen bleiben erhalten; Preise werden nicht ergänzt.</p>
+</section>
+
+<section class="card">
+  <label for="receiptPhoto">Foto des echten Kassenbons</label>
+  <div class="filebox">
+    <input id="receiptPhoto" type="file" accept="image/*">
+    <div id="photoStatus">Optional – du kannst auch ohne Foto einen Kassenbon erstellen.</div>
+  </div>
+  <p class="help">Das Foto wird proportional eingefügt und möglichst vollständig angezeigt.</p>
+</section>
+
+<section class="card">
+  <label for="closing">Abschlusstext</label>
+  <textarea id="closing">Vielen Dank für deinen Auftrag!
+
+Wir freuen uns, dich zu unterstützen.
+
+Bis zum nächsten Einkauf!</textarea>
+</section>
+
+<div id="message" role="status" aria-live="polite"></div>
+<div class="actions">
+  <button class="primary" id="createBtn">Fertig</button>
+  <button class="secondary" id="saveBtn" disabled style="display:none">PNG-Bild speichern</button>
+  <button class="secondary" id="shareBtn" disabled style="display:none">Teilen-Menü öffnen</button>
+</div>
+
+<section class="card" id="previewSection">
+  <h2 style="font-size:1.15rem;margin:0 0 12px">Vorschau des fertigen Bildes</h2>
+  <div class="preview-wrap"><img id="preview" alt="Vorschau des vollständigen Kassenbon-Bildes"></div>
+  <p class="preview-note">Die Vorschau wird auf die Bildschirmbreite angepasst. Die gespeicherte PNG-Datei enthält das vollständige, lange Bild.</p>
+</section>
+<footer>Alle Daten und Bilder werden lokal in deinem Browser verarbeitet. Es wird nichts an einen Server übertragen.</footer>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const customer = $('customer'), itemsInput = $('items'), photoInput = $('receiptPhoto'), closingInput = $('closing');
+  const createBtn = $('createBtn'), saveBtn = $('saveBtn'), shareBtn = $('shareBtn');
+  const message = $('message'), preview = $('preview'), previewSection = $('previewSection'), photoStatus = $('photoStatus');
+  let photoImage = null, pngBlob = null, pngUrl = null, generatedName = 'kassenbon.png';
+
+  function say(text, kind='error') {
+    message.textContent = text;
+    message.className = kind;
+    message.style.display = 'block';
+  }
+  function clearMessage() { message.style.display = 'none'; message.textContent = ''; message.className = ''; }
+
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files && photoInput.files[0];
+    photoImage = null;
+    if (!file) { photoStatus.textContent = 'Optional – du kannst auch ohne Foto einen Kassenbon erstellen.'; return; }
+    if (!file.type.startsWith('image/')) { photoInput.value=''; photoStatus.textContent='Bitte wähle eine Bilddatei aus.'; say('Die ausgewählte Datei ist kein Bild.'); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      photoImage = img;
+      photoStatus.textContent = `Foto ausgewählt: ${file.name || 'Bild'} (${img.naturalWidth} × ${img.naturalHeight} Pixel)`;
+      URL.revokeObjectURL(url);
+      clearMessage();
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); photoInput.value=''; say('Das Foto konnte nicht geladen werden. Bitte wähle ein anderes Bild.'); };
+    img.src = url;
+  });
+
+  function normalizedItems(value) {
+    return value.split(/\r?\n/).map(line => line.trim())
+      .filter(Boolean)
+      .map(line => line.replace(/^\s*(?:(?:[-*•▪◦‣]+)|(?:\d+[.)]))\s*/, '').trim())
+      .filter(Boolean);
+  }
+  function wrapText(ctx, text, maxWidth) {
+    const paragraphs = String(text).replace(/\r/g,'').split('\n');
+    const lines = [];
+    for (const paragraph of paragraphs) {
+      if (!paragraph) { lines.push(''); continue; }
+      const words = paragraph.split(/\s+/);
+      let line = '';
+      for (const word of words) {
+        if (ctx.measureText(word).width > maxWidth) {
+          if (line) { lines.push(line); line=''; }
+          let fragment = '';
+          for (const char of word) {
+            if (fragment && ctx.measureText(fragment + char).width > maxWidth) {
+              lines.push(fragment); fragment = char;
+            } else fragment += char;
+          }
+          line = fragment;
+        } else {
+          const candidate = line ? line + ' ' + word : word;
+          if (ctx.measureText(candidate).width > maxWidth && line) { lines.push(line); line=word; }
+          else line=candidate;
+        }
+      }
+      if (line) lines.push(line);
+    }
+    return lines;
+  }
+  function canvasToBlob(canvas) {
+    return new Promise((resolve, reject) => {
+      // Fallback für Browser, deren toBlob-Unterstützung fehlt oder fehlschlägt.
+      try {
+        if (typeof canvas.toBlob === 'function') {
+          canvas.toBlob(blob => {
+            if (blob) { resolve(blob); return; }
+            try {
+              const dataUrl = canvas.toDataURL('image/png');
+              const parts = dataUrl.split(',');
+              const binary = atob(parts[1]);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              resolve(new Blob([bytes], {type: 'image/png'}));
+            } catch (fallbackError) {
+              reject(new Error('Der Browser konnte das PNG nicht exportieren. Bitte versuche es mit einem kleineren Foto oder einer kürzeren Artikelliste erneut.'));
+            }
+          }, 'image/png');
+        } else {
+          const dataUrl = canvas.toDataURL('image/png');
+          const binary = atob(dataUrl.split(',')[1]);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          resolve(new Blob([bytes], {type: 'image/png'}));
+        }
+      } catch (e) {
+        reject(new Error('Das Bild konnte nicht erstellt werden. Möglicherweise ist es für den verfügbaren Speicher des Handys zu groß. Bitte versuche es ohne Foto oder mit einem kleineren Foto erneut.'));
+      }
+    });
+  }
+
+  async function createReceipt() {
+    clearMessage();
+    const name = customer.value.trim();
+    const items = normalizedItems(itemsInput.value);
+    if (!name) { say('Bitte gib zuerst den Kundennamen ein.'); customer.focus(); return; }
+    if (!items.length) { say('Bitte füge mindestens einen Artikel in die Artikelliste ein.'); itemsInput.focus(); return; }
+    if (photoInput.files.length && !photoImage) { say('Das Foto wird noch geladen oder konnte nicht gelesen werden. Bitte warte kurz oder wähle es erneut aus.'); return; }
+
+    createBtn.disabled = true;
+    createBtn.textContent = 'Kassenbon wird erstellt …';
+    try {
+      // Use a measurement canvas first. Final dimensions are determined before drawing.
+      const measure = document.createElement('canvas');
+      const m = measure.getContext('2d');
+      const W = 576; // Image layout only; the printer app can scale it to the printer.
+      const pad = 34, innerW = W - pad * 2;
+      const bodyFont = 25, lineH = 34, smallFont = 19;
+      let y = 28;
+      const plan = [];
+      function addText(text, font, maxWidth, gapAfter=0, options={}) {
+        m.font = font;
+        const lines = wrapText(m, text, maxWidth);
+        const h = lines.length * (options.lineH || lineH);
+        plan.push({type:'text', lines, font, x: options.x ?? pad, y, lineH: options.lineH || lineH, align: options.align || 'left', bold: !!options.bold});
+        y += h + gapAfter;
+      }
+      function addRule(gapBefore=12, gapAfter=16) {
+        y += gapBefore; plan.push({type:'rule', y}); y += gapAfter;
+      }
+      addText('KASSENBON', 'bold 34px sans-serif', innerW, 4, {align:'center', lineH:40, bold:true});
+      addText('EINKAUFSSERVICE', 'bold 17px sans-serif', innerW, 0, {align:'center', lineH:23, bold:true});
+      addRule(16, 18);
+      addText('Kunde: ' + name, 'bold 23px sans-serif', innerW, 0, {lineH:31, bold:true});
+      addRule(14, 14);
+      for (const item of items) addText('• ' + item, `${bodyFont}px sans-serif`, innerW, 5, {lineH});
+      addRule(12, 14);
+      const closing = closingInput.value.trim();
+      if (closing) addText(closing, `${smallFont}px sans-serif`, innerW, 0, {lineH:27});
+      if (photoImage) {
+        addRule(16, 14);
+        addText('ORIGINAL-KASSENBON', 'bold 19px sans-serif', innerW, 12, {align:'center', lineH:25, bold:true});
+        const maxPhotoW = innerW;
+        const scale = Math.min(maxPhotoW / photoImage.naturalWidth, 1, 10000 / photoImage.naturalHeight);
+        const photoW = Math.max(1, Math.round(photoImage.naturalWidth * scale));
+        const photoH = Math.max(1, Math.round(photoImage.naturalHeight * scale));
+        plan.push({type:'photo', x:(W-photoW)/2, y, w:photoW, h:photoH});
+        y += photoH + 18;
+      }
+      addRule(8, 14);
+      addText('Unterschrift', 'bold 21px sans-serif', innerW, 14, {lineH:28, bold:true});
+      plan.push({type:'signature', x:pad, y, w:innerW, h:64});
+      y += 64 + 28;
+
+      const H = Math.ceil(y); // Freeze final dimensions before drawing; resizing later would clear the canvas.
+      if (H > 30000 || W * H > 100000000) throw new Error('Der Kassenbon ist für den Browser zu groß. Bitte verwende ein kleineres Foto oder teile die sehr lange Artikelliste in mehrere Bons auf.');
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d', {alpha:false});
+      if (!ctx) throw new Error('Canvas wird von diesem Browser nicht unterstützt.');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle = '#111'; ctx.strokeStyle = '#222';
+      ctx.textBaseline = 'top';
+      for (const part of plan) {
+        if (part.type === 'text') {
+          ctx.font = part.font;
+          ctx.textAlign = part.align;
+          const x = part.align === 'center' ? W/2 : part.x;
+          part.lines.forEach((line, i) => ctx.fillText(line, x, part.y + i*part.lineH));
+        } else if (part.type === 'rule') {
+          ctx.save(); ctx.setLineDash([7,7]); ctx.lineWidth=1.5;
+          ctx.beginPath(); ctx.moveTo(pad,part.y); ctx.lineTo(W-pad,part.y); ctx.stroke(); ctx.restore();
+        } else if (part.type === 'photo') {
+          ctx.drawImage(photoImage, part.x, part.y, part.w, part.h);
+        } else if (part.type === 'signature') {
+          ctx.font = '18px sans-serif'; ctx.textAlign='left'; ctx.fillText(' ', part.x, part.y);
+          ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(part.x, part.y+part.h-8); ctx.lineTo(part.x+part.w, part.y+part.h-8); ctx.stroke();
+        }
+      }
+      const blob = await canvasToBlob(canvas);
+      if (pngUrl) URL.revokeObjectURL(pngUrl);
+      pngBlob = blob; pngUrl = URL.createObjectURL(blob);
+      generatedName = 'kassenbon.png';
+      preview.src = pngUrl;
+      previewSection.style.display = 'block';
+      saveBtn.disabled = false; shareBtn.disabled = false;
+      say('Der Kassenbon ist fertig. Das iPhone-Teilen-Menü wird geöffnet …', 'ok');
+      // Start the native share sheet immediately after the PNG has been prepared.
+      // If iOS rejects sharing because the user-activation window expired, expose a manual fallback.
+      try {
+        const file = new File([pngBlob], generatedName, {type:'image/png'});
+        if (navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))) {
+          await navigator.share({files:[file], title:'Kassenbon', text:'Kassenbon als PNG-Bild'});
+          say('Teilen-Menü geöffnet. Wähle „Bild sichern“ oder „In Fotos sichern“, um den Kassenbon in Fotos abzulegen.', 'ok');
+        } else {
+          say('Das PNG ist fertig. Tippe auf „Teilen-Menü öffnen“, falls dein Browser das Teilen unterstützt.', 'error');
+          shareBtn.style.display = 'block';
+        }
+      } catch (shareError) {
+        if (shareError && shareError.name === 'AbortError') {
+          say('Das Teilen-Menü wurde geschlossen. Du kannst es über „Teilen-Menü öffnen“ erneut öffnen.', 'ok');
+        } else {
+          say('Das PNG ist fertig, aber iOS hat das automatische Öffnen des Teilen-Menüs blockiert. Tippe auf „Teilen-Menü öffnen“.', 'error');
+        }
+        shareBtn.style.display = 'block';
+      }
+      previewSection.scrollIntoView({behavior:'smooth', block:'start'});
+    } catch (error) {
+      console.error(error);
+      say(error && error.message ? error.message : 'Beim Erstellen ist ein Fehler aufgetreten. Bitte versuche es erneut.');
+    } finally {
+      createBtn.disabled = false;
+      createBtn.textContent = 'Fertig';
+    }
+  }
+
+  createBtn.addEventListener('click', createReceipt);
+  saveBtn.addEventListener('click', () => {
+    if (!pngBlob) return;
+    const url = URL.createObjectURL(pngBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = generatedName;
+    document.body.appendChild(a);
+    if ('download' in a) {
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      say('Der Download wurde angefordert. Falls dein Handy das Bild nur öffnet, nutze im Browser-Menü „Bild speichern“ oder die Teilen-Funktion.', 'ok');
+    } else {
+      a.remove();
+      const opened = window.open(url, '_blank');
+      if (!opened) {
+        say('Der Browser blockiert das direkte Speichern. Nutze „In Fotos/Galerie sichern oder teilen“ oder öffne die Vorschau und speichere das Bild über das Browser-Menü.', 'error');
+      } else {
+        say('Das PNG wurde geöffnet. Speichere es über das Menü deines Browsers auf deinem Handy.', 'ok');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  });
+  shareBtn.addEventListener('click', async () => {
+    if (!pngBlob) return;
+    try {
+      const file = new File([pngBlob], generatedName, {type:'image/png'});
+      if (navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))) {
+        await navigator.share({files:[file], title:'Kassenbon', text:'Kassenbon als PNG-Bild'});
+        say('Das PNG ist im Teilen-Menü geöffnet. Wähle „Bild sichern“ / „In Fotos sichern“ (iPhone) oder „Galerie/Fotos“ bzw. „Auf Gerät speichern“ (Android), falls angeboten.', 'ok');
+      } else {
+        say('Dieser Browser unterstützt das Teilen von Bilddateien nicht. Öffne die PNG-Vorschau im Browser-Menü und wähle „Bild sichern“; alternativ nutze einen Browser mit Teilen-Funktion.', 'error');
+      }
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;
+      say('Das Teilen hat nicht funktioniert. Bitte öffne die Website in Safari (iPhone) oder Chrome (Android) und versuche es erneut.', 'error');
+    }
+  });
+})();
+</script>
+</body>
+</html>
